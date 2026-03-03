@@ -14,14 +14,27 @@ export class Chat extends Server<Env> {
 
 	external?: WebSocket;
 	
-	connectExternal() {
-		this.external = new WebSocket("wss://ws-api.wolfx.jp/jma_eew");
+	async connectExternal() {
+		const response = await fetch("https://ws-api.wolfx.jp/jma_eew", {
+			headers: {
+				Upgrade: "websocket",
+			},
+		});
 	
-		this.external.addEventListener("message", (event) => {
+		const ws = response.webSocket;
+		if (!ws) {
+			console.log("WebSocket upgrade failed");
+			return;
+		}
+	
+		ws.accept();
+		this.external = ws;
+	
+		ws.addEventListener("message", (event) => {
 			this.broadcast(event.data.toString());
 		});
 	
-		this.external.addEventListener("close", () => {
+		ws.addEventListener("close", () => {
 			console.log("external closed, reconnecting...");
 			setTimeout(() => this.connectExternal(), 3000);
 		});
@@ -31,7 +44,7 @@ export class Chat extends Server<Env> {
 		this.broadcast(JSON.stringify(message), exclude);
 	}
 
-	onStart() {
+async onStart() {
 		// this is where you can initialize things that need to be done before the server starts
 		// for example, load previous messages from a database or a service
 
@@ -45,7 +58,7 @@ export class Chat extends Server<Env> {
 			.exec(`SELECT * FROM messages`)
 			.toArray() as ChatMessage[];
 
-		this.connectExternal();
+		await this.connectExternal();
 	}
 
 	onConnect(connection: Connection) {
