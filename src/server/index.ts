@@ -105,7 +105,10 @@ async function handleProxy(request: Request): Promise<Response> {
     const cached = await cache.match(cacheKey);
     if (cached) {
         return new Response(cached.body, {
-            headers: { ...Object.fromEntries(cached.headers), ...corsHeaders }
+            headers: {
+                "Content-Type": cached.headers.get("Content-Type") ?? "application/json",
+                ...corsHeaders,
+            }
         });
     }
 
@@ -120,7 +123,7 @@ async function handleProxy(request: Request): Promise<Response> {
     const response = new Response(upstream.body, {
         status: upstream.status,
         headers: {
-            ...Object.fromEntries(upstream.headers),
+            "Content-Type": upstream.headers.get("Content-Type") ?? "application/json",
             ...corsHeaders,
             "Cache-Control": path.startsWith("/api/p2pquake")
                 ? "public, max-age=10"
