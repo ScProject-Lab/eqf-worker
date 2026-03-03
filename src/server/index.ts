@@ -15,7 +15,7 @@ export class Chat extends Server<Env> {
 	external?: WebSocket;
 	
 	connectExternal() {
-		this.external = new WebSocket("wss://外部APIのURL");
+		this.external = new WebSocket("wss://ws-api.wolfx.jp/jma_eew");
 	
 		this.external.addEventListener("message", (event) => {
 			this.broadcast(event.data.toString());
