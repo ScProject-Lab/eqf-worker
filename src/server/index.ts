@@ -12,6 +12,21 @@ export class Chat extends Server<Env> {
 
 	messages = [] as ChatMessage[];
 
+	external?: WebSocket;
+	
+	connectExternal() {
+		this.external = new WebSocket("wss://外部APIのURL");
+	
+		this.external.addEventListener("message", (event) => {
+			this.broadcast(event.data.toString());
+		});
+	
+		this.external.addEventListener("close", () => {
+			console.log("external closed, reconnecting...");
+			setTimeout(() => this.connectExternal(), 3000);
+		});
+	}
+
 	broadcastMessage(message: Message, exclude?: string[]) {
 		this.broadcast(JSON.stringify(message), exclude);
 	}
@@ -29,6 +44,8 @@ export class Chat extends Server<Env> {
 		this.messages = this.ctx.storage.sql
 			.exec(`SELECT * FROM messages`)
 			.toArray() as ChatMessage[];
+
+		this.connectExternal();
 	}
 
 	onConnect(connection: Connection) {
