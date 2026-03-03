@@ -9,7 +9,6 @@ import {
 	useParams,
 } from "react-router";
 import { nanoid } from "nanoid";
-
 import { names, type ChatMessage, type Message } from "../shared";
 
 function App() {
@@ -25,7 +24,6 @@ function App() {
 			if (message.type === "add") {
 				const foundIndex = messages.findIndex((m) => m.id === message.id);
 				if (foundIndex === -1) {
-					// probably someone else who added a message
 					setMessages((messages) => [
 						...messages,
 						{
@@ -36,9 +34,6 @@ function App() {
 						},
 					]);
 				} else {
-					// this usually means we ourselves added a message
-					// and it was broadcasted back
-					// so let's replace the message with the new message
 					setMessages((messages) => {
 						return messages
 							.slice(0, foundIndex)
@@ -64,8 +59,12 @@ function App() {
 							: m,
 					),
 				);
+			} else if (message.type === "all") {
+				// type: "all" のときだけ全メッセージを上書き
+				setMessages(message.messages ?? []);
 			} else {
-				setMessages(message.messages);
+				// EEWなど未知のメッセージはログに出すだけ
+				console.log("Unknown message:", message);
 			}
 		},
 	});
@@ -92,15 +91,12 @@ function App() {
 						role: "user",
 					};
 					setMessages((messages) => [...messages, chatMessage]);
-					// we could broadcast the message here
-
 					socket.send(
 						JSON.stringify({
 							type: "add",
 							...chatMessage,
 						} satisfies Message),
 					);
-
 					content.value = "";
 				}}
 			>
@@ -119,7 +115,6 @@ function App() {
 	);
 }
 
-// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
 createRoot(document.getElementById("root")!).render(
 	<BrowserRouter>
 		<Routes>
