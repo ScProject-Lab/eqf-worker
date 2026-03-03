@@ -1,19 +1,78 @@
-export default {
-    async fetch(request, env) {
-        const url = new URL(request.url);
+import {
+    type Connection,
+    Server,
+    type WSMessage,
+    routePartykitRequest,
+} from "partyserver";
+import type { ChatMessage, Message } from "../shared";
 
-        // /api/* はプロキシ処理
-        if (url.pathname.startsWith("/api/")) {
-            return handleProxy(request);
-        }
+export class Chat extends Server<Env> {  // ← export が必要
+    static options = { hibernate: true };
+    messages = [] as ChatMessage[];
+    external?: WebSocket;
 
-        return (
-            (await routePartykitRequest(request, { ...env })) ||
-            env.ASSETS.fetch(request)
+    async connectExternal() {
+        const response = await fetch("https://ws-api.wolfx.jp/jma_eew", {
+            headers: { Upgrade: "websocket" },
+        });
+        const ws = response.webSocket;
+        if (!ws) { console.log("WebSocket upgrade failed"); return; }
+        ws.accept();
+        this.external = ws;
+        ws.addEventListener("message", (event) => {
+            this.broadcast(event.data.toString());
+        });
+        ws.addEventListener("close", () => {
+            console.log("external closed, reconnecting...");
+            setTimeout(() => this.connectExternal(), 3000);
+        });
+    }
+
+    broadcastMessage(message: Message, exclude?: string[]) {
+        this.broadcast(JSON.stringify(message), exclude);
+    }
+
+    async onStart() {
+        this.ctx.storage.sql.exec(
+            `CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, user TEXT, role TEXT, content TEXT)`,
         );
-    },
-} satisfies ExportedHandler<Env>;
+        this.messages = this.ctx.storage.sql
+            .exec(`SELECT * FROM messages`)
+            .toArray() as ChatMessage[];
+        await this.connectExternal();
+    }
 
+    onConnect(connection: Connection) {
+        connection.send(JSON.stringify({
+            type: "all",
+            messages: this.messages,
+        } satisfies Message));
+    }
+
+    saveMessage(message: ChatMessage) {
+        const existingMessage = this.messages.find((m) => m.id === message.id);
+        if (existingMessage) {
+            this.messages = this.messages.map((m) =>
+                m.id === message.id ? message : m
+            );
+        } else {
+            this.messages.push(message);
+        }
+        this.ctx.storage.sql.exec(
+            `INSERT INTO messages (id, user, role, content) VALUES ('${message.id}', '${message.user}', '${message.role}', ${JSON.stringify(message.content)}) ON CONFLICT (id) DO UPDATE SET content = ${JSON.stringify(message.content)}`,
+        );
+    }
+
+    onMessage(connection: Connection, message: WSMessage) {
+        this.broadcast(message);
+        const parsed = JSON.parse(message as string) as Message;
+        if (parsed.type === "add" || parsed.type === "update") {
+            this.saveMessage(parsed);
+        }
+    }
+}
+
+// プロキシ用CORSヘッダー
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
@@ -72,3 +131,18 @@ async function handleProxy(request: Request): Promise<Response> {
     await cache.put(cacheKey, response.clone());
     return response;
 }
+
+export default {
+    async fetch(request, env) {
+        const url = new URL(request.url);
+
+        if (url.pathname.startsWith("/api/")) {
+            return handleProxy(request);
+        }
+
+        return (
+            (await routePartykitRequest(request, { ...env })) ||
+            env.ASSETS.fetch(request)
+        );
+    },
+} satisfies ExportedHandler<Env>;
